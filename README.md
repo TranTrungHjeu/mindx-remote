@@ -1,78 +1,104 @@
-# Hướng dẫn chi tiết chạy API Node.js tự động hóa xử lý Ticket
+# Ticket Automation Service - Week 5
 
-Ứng dụng Node.js này đóng vai trò là API nhận Webhook (`POST /webhook/odoo`) trực tiếp từ Odoo để tự động hóa xử lý Ticket.
+This directory contains the Node.js Express application that serves as the Automation API for handling IT support tickets from Odoo Helpdesk. It automates ticket analysis, HR verification, and resolution workflows.
 
-## Các tính năng chính
+## Project Deliverables
 
-1. **Webhook Receiver API:** Endpoint lắng nghe sự kiện từ Odoo gửi sang.
-2. **NLP Pattern Matching:** Nhận diện ticket liên quan đến sự cố đăng nhập/khoá tài khoản.
-3. **Mock HR Integration:** Tra cứu trạng thái nhân sự (Active/Terminated).
-4. **Decision Logic & Actions:**
-   - Nhân viên đang làm việc (Active) -> Tự động kích hoạt tài khoản LMS + Gửi email thông báo + Đóng Ticket trên Odoo thành 'Resolved'.
-   - Nhân viên đã nghỉ việc (Terminated) -> Chuyển ticket về hàng chờ 'Pending IT Review' + Viết log cảnh báo.
+The complete documentation and analysis report are hosted on Notion:
+* **Notion Report:** [Week 5 Report and Documentation](https://xitthui0111.notion.site/week5?pvs=73)
+
+## Core Capabilities
+
+1. **Webhook Receiver Endpoint:** Accepts HTTP POST requests (`/webhook/odoo`) triggered by Odoo Helpdesk.
+2. **NLP Pattern Matching:** Analyzes ticket subject and description fields to identify accounts requiring reactivation or password resets.
+3. **HR Database Verification:** Integrates with a mock HR system to check employee status (Active or Terminated).
+4. **Automated Decisions and Actions:**
+   * **Active Employees:** Automatically reactivates LMS accounts, sends confirmation emails, and updates Odoo ticket status to `Resolved`.
+   * **Terminated Employees:** Flags the request, adds a warning note to Odoo, and routes the ticket to `Pending IT Review`.
+   * **Unknown status:** Routes the ticket to `Pending HR Review`.
 
 ---
 
-## 1. Cách khởi chạy API Server
+## Local Setup and Installation
 
-1. Cài đặt các thư viện cần thiết:
+### Prerequisites
+* Node.js (version 18 or higher)
+* npm or pnpm
 
+### Installation
+1. Install project dependencies:
    ```bash
    npm install
    ```
 
-2. Khởi chạy server:
+2. Start the local server:
    ```bash
-   node server.js
+   npm start
    ```
+   The application will start on port 3000: `http://localhost:3000`.
 
-Server sẽ chạy ở cổng 3000:
+---
 
+## Webhook Payload Formats
+
+The endpoint `/webhook/odoo` accepts payloads in the following formats.
+
+### Standard Format (Custom Scripts)
+```json
+{
+  "id": "1001",
+  "subject": "Unable to log in to LMS",
+  "description": "The system indicates my account has been deactivated.",
+  "email": "john.doe@example.com"
+}
 ```
-http://localhost:3000/webhook/odoo
+
+### Native Odoo Webhook Format
+The service automatically maps the native Odoo field names to the system's internal payload format:
+* `name` maps to `subject`
+* `partner_email` maps to `email`
+
+```json
+{
+  "id": 12,
+  "name": "Unable to log in to LMS",
+  "description": "My account is inactive.",
+  "partner_email": "john.doe@example.com"
+}
 ```
 
 ---
 
-## 2. Hướng dẫn Test API chi tiết bằng `curl`
+## Verification Test Cases
 
-Mở một terminal mới (trong khi server đang chạy) và copy các câu lệnh dưới đây để giả lập sự kiện Webhook gửi từ Odoo:
+Execute the following `curl` commands to test the automation logic.
 
-### Case 1: Nhân sự đang làm việc (Active) -> Tự động xử lý và giải quyết ticket
-
+### Case 1: Active Employee (Automatic Resolution)
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{
   "id": "1001",
-  "subject": "Không đăng nhập được LMS",
-  "description": "Hệ thống báo tài khoản của tôi đang bị vô hiệu hoá.",
+  "subject": "Cannot access LMS",
+  "description": "Account is inactive",
   "email": "john.doe@example.com"
 }' http://localhost:3000/webhook/odoo
 ```
 
-_Kết quả server logs:_ Sẽ tự động kích hoạt tài khoản, gửi email phản hồi, cập nhật Odoo thành `Resolved`.
-
-### Case 2: Nhân sự đã nghỉ việc (Terminated) -> Từ chối tự động, gắn cờ cảnh báo IT
-
+### Case 2: Terminated Employee (Escalation)
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{
   "id": "1002",
-  "subject": "Yêu cầu Reset mật khẩu",
-  "description": "Vui lòng cấp lại mật khẩu đăng nhập LMS.",
+  "subject": "Password reset request",
+  "description": "Please reactivate my account",
   "email": "jane.smith@example.com"
 }' http://localhost:3000/webhook/odoo
 ```
 
-_Kết quả server logs:_ Phát hiện nhân sự nghỉ việc, ghi chú private note cảnh báo và đẩy trạng thái ticket thành `Pending IT Review`.
-
-### Case 3: Ticket không liên quan đến đăng nhập -> Bỏ qua
-
+### Case 3: Unrelated Ticket (Bypass)
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{
   "id": "1003",
-  "subject": "Xin cấp chuột máy tính mới",
-  "description": "Chuột của tôi bị hỏng con lăn.",
+  "subject": "Request for new keyboard",
+  "description": "My keyboard is broken",
   "email": "alex.wong@example.com"
 }' http://localhost:3000/webhook/odoo
 ```
-
-_Kết quả server logs:_ Báo lỗi không khớp bộ lọc NLP và dừng xử lý để IT tự check thủ công.
