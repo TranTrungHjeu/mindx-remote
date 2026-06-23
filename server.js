@@ -72,6 +72,13 @@ app.post("/webhook/odoo", async (req, res) => {
   console.log("\n--- Received New Webhook Event ---");
   const ticket = req.body;
 
+  // Normalize ticket fields (supports both custom python script and native Odoo webhook format)
+  ticket.subject = ticket.subject || ticket.name || ticket.display_name || "";
+  ticket.email = ticket.email || ticket.partner_email || "";
+  if (typeof ticket.email === "object" && ticket.email !== null) {
+    ticket.email = ticket.email.email || "";
+  }
+
   // Basic validation
   if (!ticket || !ticket.id) {
     console.error("Invalid ticket payload received.");
